@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="30 seconds">
+        <!-- -Dlogback.configurationFile=logback.xml-->
+        <conversionRule conversionWord="maskMsg" converterClass="com.pgmate.lib.util.logback.MaskingConverter" />
+
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+                <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+                        <pattern>%d{HH:mm:ss.SSS} %-5level %logger{15} - %msg%n</pattern>
+                </encoder>
+        </appender>
+
+        <appender name="LOCAL" class="ch.qos.logback.core.rolling.RollingFileAppender">
+                <file>../logs/root.txt</file>
+                <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                        <fileNamePattern>../logs/backup/root.%d{yyyyMMdd}.zip</fileNamePattern>
+                        <maxHistory>7</maxHistory>
+                </rollingPolicy>
+                <encoder>
+                        <pattern>%d{HH:mm:ss.SSS} %-5level %logger{15} - %maskMsg%n</pattern>
+                </encoder>
+        </appender>
+        <appender name="REMOTE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+                <file>/nfs/LOG/HKH_PAY/root.txt</file>
+                <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                        <fileNamePattern>/nfs/LOG/HKH_PAY/backup/root.%d{yyyyMMdd}.zip</fileNamePattern>
+                        <maxHistory>1825</maxHistory>
+                </rollingPolicy>
+                <encoder>
+                        <pattern>%d{HH:mm:ss.SSS} %-5level %logger{15} - %maskMsg%n</pattern>
+                </encoder>
+        </appender>
+
+        <logger name="io.netty" level="INFO"/>
+        <logger name="org.apache.commons.beanutils" level="ERROR"/>
+        <logger name="com.zaxxer.hikari" level="INFO"/>
+
+
+
+
+        <root level="DEBUG">
+        	<appender-ref ref="CONSOLE" />
+            <appender-ref ref="LOCAL" />
+			<appender-ref ref="REMOTE" />
+        </root>
+<typeAliases></typeAliases>
+</configuration>

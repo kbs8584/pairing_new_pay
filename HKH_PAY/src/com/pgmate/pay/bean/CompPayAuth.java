@@ -1,0 +1,36 @@
+package com.pgmate.pay.bean;
+
+/**
+ * @author Administrator
+ *
+ */
+public class CompPayAuth {
+
+	public String mchtKey			= null;
+	public String compNo			= null;
+	public String compMember	= null;
+	public long amount			= 0;
+	public String payerName		= null;
+	public String payerTel			= null;
+	public String payerEmail		= null;
+	public String name				= null;
+	public String price				= null;
+	public String qty				= null;
+	public String encData			= null;
+	
+	public String trxId				= null;
+	
+	public String trxType			= null;
+	
+	public CompPayAuth() {
+		// TODO Auto-generated constructor stub
+	}
+
+	@Override
+	public String toString() {
+		return "CompPayAuth [mchtKey=" + mchtKey + ", compNo=" + compNo + ", compMember=" + compMember + ", amount="
+				+ amount + ", payerName=" + payerName + ", payerTel=" + payerTel + ", payerEmail=" + payerEmail
+				+ ", name=" + name + ", price=" + price + ", qty=" + qty + ", encData=" + encData + ", trxId=" + trxId + ", trxType=" + trxType + "]";
+	}
+
+}

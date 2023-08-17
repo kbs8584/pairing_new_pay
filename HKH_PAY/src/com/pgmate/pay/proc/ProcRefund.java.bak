@@ -1,0 +1,552 @@
+package com.pgmate.pay.proc;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.pgmate.lib.util.lang.CommonUtil;
+import com.pgmate.lib.util.map.SharedMap;
+import com.pgmate.pay.bean.Request;
+import com.pgmate.pay.util.PAYUNIT;
+import com.pgmate.pay.van.Allat;
+import com.pgmate.pay.van.Danal;
+import com.pgmate.pay.van.Daou;
+import com.pgmate.pay.van.DemoVan;
+import com.pgmate.pay.van.EmptyVan;
+import com.pgmate.pay.van.Fiserv;
+import com.pgmate.pay.van.KovanDirect;
+import com.pgmate.pay.van.Kspay;
+import com.pgmate.pay.van.Nice;
+import com.pgmate.pay.van.Pairing;
+import com.pgmate.pay.van.Smartro;
+import com.pgmate.pay.van.SmartroAuth;
+import com.pgmate.pay.van.Spc;
+import com.pgmate.pay.van.Van;
+import com.pgmate.pay.van.Welcome;
+
+import io.vertx.ext.web.RoutingContext;
+
+/**
+ * @author Administrator
+ *
+ */
+public class ProcRefund extends Proc {
+	private static Logger logger 				= LoggerFactory.getLogger( com.pgmate.pay.proc.ProcRefund.class );
+	
+	private SharedMap<String,Object> trxMap 	=	null;
+	
+	//private SharedMap<String,Object> capDtlMap 	=	null;
+	
+
+
+	public ProcRefund() {
+		
+	}
+
+	@Override
+	public synchronized void exec(RoutingContext rc,Request request,SharedMap<String,Object> sharedMap,SharedMap<String,SharedMap<String,Object>> sharedObject) {
+		logger.info("========== ========== ========== ========== ========== exec() - BEGIN");
+		set(rc,request,sharedMap,sharedObject);
+		response.refund = request.refund;
+		
+		if (response.result != null) {
+			setResponse();
+			return;
+		}
+		
+		logger.debug("exec - trxDAO.insertTrxRFD 실행");		
+		trxDAO.insertTrxRFD(sharedMap, trxMap, response);
+		
+		SharedMap<String, Object> vanMap = trxDAO.getVanByVanId(trxMap.getString("van"), trxMap.getString("vanId"));
+		if (vanMap == null) {
+			vanMap = trxDAO.getVanByVanId2(trxMap.getString("van"), trxMap.getString("vanId"));
+		}
+		response.refund.mchtId = trxMap.getString("mchtId");
+		
+		Van van = null;
+		logger.info("========== exec - VAN : " + trxMap.getString("van"));
+		if (trxMap.isEquals("van", "DEMO")) {
+			van = new DemoVan(vanMap);
+		} else if (trxMap.startsWith("van", "DANAL")) {
+			van = new Danal(vanMap);
+		} else if (trxMap.startsWith("van", "NICE")) {
+			van = new Nice(vanMap);
+		} else if (trxMap.startsWith("van", "DAOU")) {
+			van = new Daou(vanMap);
+		} else if (trxMap.startsWith("van", "KSPAY")) {
+			van = new Kspay(vanMap);
+		} else if (trxMap.startsWith("van", "PAIRING") || trxMap.startsWith("van", "KWON")
+				|| trxMap.startsWith("van", "TPO") || trxMap.startsWith("van", "E2U")
+				|| trxMap.startsWith("van", "PAYBOT") || trxMap.startsWith("van", "UREX")) {
+			van = new Pairing(vanMap);
+		} else if (trxMap.startsWith("van", "ALLAT")) {
+			van = new Allat(vanMap);
+		} else if (trxMap.startsWith("van", "FDIKPAY")) {
+			van = new Fiserv(vanMap);
+/*
+		} else if (mchtTmnMap.startsWith("van", "SMARTROAUTH")) {
+			logger.info("========== van = new SMARTROAUTH ");
+			van = new SmartroAuth(vanMap);
+		} else if (mchtTmnMap.startsWith("van", "SMARTRO")) {
+			if (mchtTmnMap.startsWith("semiAuth", "A")) {
+				logger.info("========== 인증결제 SMARTRO ");
+				logger.info("response.refund : " + response.refund);
+				//sharedMap.put("vanTrxId", response.refund.);
+				van = new SmartroAuth(vanMap);
+			} else {
+				van = new Smartro(vanMap);	
+			}
+			//van = new Smartro(tmnVanMap);
+*/		
+		} else if (trxMap.startsWith("van", "SMARTRO")) {
+			van = new Smartro(vanMap);
+		} else if (trxMap.startsWith("van", "PAIRINGSOLUTION")) {
+			if (sharedMap.isEquals("pairingRouteVan", "KOVAN")) {
+				van = new KovanDirect(vanMap);
+			}
+			if (sharedMap.isEquals("pairingRouteVan", "KSNET")) {
+				// van = new kspayDirect(tmnVanMap);
+			}
+		} else if (trxMap.startsWith("van", "SPC")) {
+			van = new Spc(vanMap);
+		} else if (trxMap.startsWith("van", "WELCOME")) {
+			//van = new Welcome(vanMap);
+			//if (vanMap.getString("vanId").equals("welcome246")) {
+			if (vanMap.startsWith("vanId", "welcome")) {
+				van = new Allat(vanMap);
+			} else {
+				van = new Welcome(vanMap);
+			}
+		} else {
+			trxMap.put("van", "");
+			van = new EmptyVan(trxMap);
+		}
+		sharedMap = van.refund(trxDAO, sharedMap, trxMap, response);
+		
+		//20181212 시간은 상위사 응답 시간으로 변경 
+		if (sharedMap.getString("vanDate").length() == 14) {
+			response.refund.trxDate = sharedMap.getString("vanDate");
+		}
+
+		trxDAO.updateTrxRFD(sharedMap, response);
+		if (response.result.resultCd.equals("0000")) {
+
+			response.refund.rootTrackId = trxMap.getString("trackId");
+			response.refund.rootTrxId	= trxMap.getString("trxId");
+			response.refund.rootTrxDay 	= trxMap.getString("regDay");
+			
+			// 당일 취소는 반드시 전액 취소만 가능하며 . 승인 취소로 업데이트 한다.
+			if (trxMap.isEquals("regDay", sharedMap.getString(PAYUNIT.REG_DATE).substring(0, 8))) {
+				if (!sharedMap.isEquals("rfdAll", "부분")) {
+					trxDAO.updateTrxPay(trxMap.getString("trxId"));
+				}
+			}
+
+			if (!CommonUtil.isNullOrSpace(request.refund.webhookUrl)) {
+				new ThreadWebHook(request.refund.webhookUrl, response).start();
+			}
+			
+			// 강제취소인경우 해당 레코드에 취소일자를 설정한다.
+			trxDAO.updateForceRefund(trxMap.getString("trxId"));
+
+			// 2022-06-03 전취소 시, 정산보류 해제 처리
+			// 정산보류건 취소시, 정산보류 해제
+			// 정산보류 잡힌 건 취소시(전취소)
+			// 정산보류가 해제되어 취소건과 같이 정산 실행이 되어야 합니다.
+			// 전취소 승인건 + 전취소 취소건 = 0원 으로 정산 정상처리 되도록 수정 요청합니다.
+			Boolean riskChk = false;
+			riskChk = trxDAO.getRootRiskChkToUpdate(trxMap.getString("trxId"));
+			if (riskChk) {
+				logger.info("원거래 전취소 정산보류 해제 되었습니다.");
+			} else {
+				
+			}
+			
+			// 20190827 이메일 전송 추가
+			try {
+				if (mchtMngMap.isEquals("notiEmail", "사용") && !trxMap.isNullOrSpace("payerEmail")) {
+					SharedMap<String, Object> emailMap = new SharedMap<String, Object>();
+					emailMap.put("trxId", response.refund.trxId);
+					emailMap.put("tmnId", mchtTmnMap.getString("tmnId"));
+					emailMap.put("mchtId", mchtMap.getString("mchtId"));
+					emailMap.put("trackId", response.refund.trackId);
+					emailMap.put("trxType", "CARDRFD");
+					emailMap.put("payerEmail", trxMap.getString("payerEmail"));
+					trxDAO.insertTrxNtsEmail(emailMap);
+				}
+			} catch (Exception e) {
+
+			}
+		}
+		
+		setResponse();
+		return;
+	}
+
+
+	@Override
+	public synchronized void valid() {
+		logger.info("========== ========== ========== ========== ==========  valid() 실행 ");
+		if (request.refund == null) {
+			response.result = ResultUtil.getResult("9999", "필수값없음", "취소 요청 정보가 없습니다.");
+			return;
+		}
+
+		request.refund.trxId = sharedMap.getString(PAYUNIT.TRX_ID);
+		request.refund.trxDate = sharedMap.getString(PAYUNIT.REG_DATE);
+		
+		if (trxDAO.getTrxIOData(request.refund.trxId)) {
+			response.result = ResultUtil.getResult("9999", "동시결제오류", "동시결제가 존재합니다. 다시 시도해주시기 바랍니다.");
+			return;
+		}
+		
+		if (CommonUtil.isNullOrSpace(request.refund.tmnId)) {
+			request.refund.tmnId = sharedMap.getString("tmnId");
+		} else {
+			request.refund.tmnId = request.refund.tmnId.trim();
+		}
+		
+		request.refund.tmnId  = mchtTmnMap.getString("tmnId");
+		//20190710 과세 유형에 따른 부가세 처리 
+		sharedMap.put("taxType", mchtTmnMap.getString("taxType"));
+
+		if (CommonUtil.isNullOrSpace(request.refund.trackId)) {
+			response.result = ResultUtil.getResult("9999", "필수값없음", "가맹점 주문번호가 입력되지 않았습니다.");
+			return;
+		}
+
+		if (CommonUtil.isNullOrSpace(request.refund.rootTrxId)) {
+			logger.info("========== valid() - request.refund.rootTrxId : " + request.refund.rootTrxId);
+			logger.info("========== valid() - TRACK_ID     : {}", request.refund.trackId);
+			logger.info("========== valid() - ROOT_TRACK_ID: {}", request.refund.rootTrackId);
+			logger.info("========== valid() - ROOT_TRX_DAY : {}", request.refund.rootTrxDay);
+
+			if (CommonUtil.isNullOrSpace(request.refund.rootTrackId)) {
+				response.result = ResultUtil.getResult("9999", "필수값없음", "원거래 주문번호가 없습니다.");
+				return;
+			}
+			if (CommonUtil.isNullOrSpace(request.refund.rootTrxDay)) {
+				response.result = ResultUtil.getResult("9999", "필수값없음", "원거래 거래일자가 없습니다.");
+				return;
+			}
+
+			if (request.refund.amount == 0) {
+				response.result = ResultUtil.getResult("9999", "필수값없음", "원거래 금액이 없습니다.");
+				return;
+			}
+			// 승인번호 제외
+			trxMap = trxDAO.getTrxPayByTrackId(request.refund.tmnId, request.refund.rootTrackId, request.refund.rootTrxDay, request.refund.amount);
+		} else {
+			logger.info("========== valid() - ROOT_TRX_ID  : {},{}", request.refund.tmnId, request.refund.rootTrxId);
+			trxMap = trxDAO.getTrxPayByTrxId(request.refund.tmnId, request.refund.rootTrxId);
+		}
+		
+		if (trxMap == null) {
+			response.result = ResultUtil.getResult("9999", "원거래없음", "원거래를 찾을 수 없습니다.");
+			return;
+		}
+		logger.info("========== valid() - ROOT_TRX_ID: {}", trxMap.getString("trxId"));
+		logger.info("========== valid() - ROOT_AMOUNT: {}", trxMap.getLong("amount"));
+		logger.info("========== valid() - ROOT_TRX_DAY: {}", trxMap.getString("regDay"));
+		logger.info("========== valid() - ROOT_VAN: {}", trxMap.getString("van"));
+		logger.info("========== valid() - ROOT_VANID: {}", trxMap.getString("vanId"));
+		
+		sharedMap.put("rootTrxId", trxMap.getString("trxId"));
+
+		// 당일은 반드시 전액 취소 진행
+		// if(trxMap.isEquals("regDay",sharedMap.getString(PAYUNIT.REG_DATE).substring(0,8))){
+		// request.refund.amount = trxMap.getLong("amount");
+		// }
+		if (request.refund.amount == 0) {
+			request.refund.amount = trxMap.getLong("amount");
+		}
+
+		// 2022-08-01 - 영업사원 정보 조회
+		SharedMap<String, Object> salesMap = new SharedMap<String, Object>();
+		if (CommonUtil.isNullOrSpace(trxMap.getString("salesId"))) {
+			logger.info("========== valid() -  salesId IS NULL");
+		} else {
+			logger.info("========== valid() - trxMap salesId : " + trxMap.getString("salesId"));
+			salesMap = trxDAO.getSalesMngByIdChk(trxMap.getString("salesId"));
+			if (salesMap == null) {
+				logger.info("========== valid() - 영업사원 아이디가 존재하지 않습니다. : trxMap salesId : " + trxMap.getString("salesId"));
+				response.result = ResultUtil.getResult("9999", "영업사원결제", "영업사원 아이디가 존재하지 않습니다.");
+				return;
+			} else {
+				if (CommonUtil.isNullOrSpace(salesMap.getString("salesId"))) {
+					logger.info("========== valid() - salesMap salesId = empty ");
+					logger.info("========== valid() END");
+					logger.debug("========== valid() - 영업사원 아이디가 존재하지 않습니다. : salesMap salesId : " + salesMap.getString("salesId"));
+					response.result = ResultUtil.getResult("9999", "영업사원결제", "영업사원 아이디가 존재하지 않습니다.");
+					return;
+				} else {
+					
+				}
+			}
+		}
+		
+		// 지불중지 가맹점
+		if (mchtMngMap.isEquals("payStatus", "중지")) {
+			if (request.refund.metadata != null) {
+				if (request.refund.metadata.isEquals("grade", "본사") || request.refund.metadata.isEquals("grade", "대행사")) {
+					logger.debug("payStatus 중지 가맹점 본사 계정으로 접속하여 허용함. grade : {}", request.refund.metadata.getString("grade"));
+				} else {
+					logger.debug("결제 중지 가맹점 payStatus : {},{}", mchtMngMap.getString("payStatus"));
+					response.result = ResultUtil.getResult("9999", "취소거절", "승인중지된 가맹점입니다. 취소는 관리자에게 문의하여 주시기 바랍니다.");
+					return;
+				}
+			} else {
+				logger.debug("결제 중지 가맹점 payStatus : {},{}", mchtMngMap.getString("payStatus"));
+				response.result = ResultUtil.getResult("9999", "취소거절", "승인중지된 가맹점입니다. 취소는 관리자에게 문의하여 주시기 바랍니다.");
+				return;
+			}
+		}
+		
+		// 상태중지 가맹점
+		if (!mchtMap.isEquals("status", "사용")) {
+			if (request.refund.metadata != null) {
+				if (request.refund.metadata.isEquals("grade", "본사") || request.refund.metadata.isEquals("grade", "대행사")) {
+					logger.debug("========== valid() - status 중지 가맹점 본사 계정으로 접속하여 허용함. grade : {}", request.refund.metadata.getString("grade"));
+				} else {
+					logger.debug("========== valid() - 결제 중지 가맹점 status : {}", mchtMap.getString("status"));
+					response.result = ResultUtil.getResult("9999", "취소거절", "승인중지된 가맹점입니다. 취소는 관리자에게 문의하여 주시기 바랍니다.");
+					return;
+				}
+			} else {
+				logger.debug("========== valid() - 결제 중지 가맹점 status : {}", mchtMap.getString("status"));
+				response.result = ResultUtil.getResult("9999", "취소거절", "승인중지된 가맹점입니다. 취소는 관리자에게 문의하여 주시기 바랍니다.");
+				return;
+			}
+		}
+		
+		// 취소 금액 확인
+		if (request.refund.amount > trxMap.getLong("amount")) {
+			response.result = ResultUtil.getResult("9999", "취소오류", "취소요청금액이 원거래금액보다 큽니다.");
+			return;
+		}
+
+		// 원거래 취소 확인
+		SharedMap<String, Object> rfdMap = trxDAO.getTrxRfdByTrxId(trxMap.getString("trxId"));
+		if (rfdMap != null) {
+			if (rfdMap.isEquals("rfdAll", "전액") && rfdMap.isEquals("status", "완료")) {
+				response.result = ResultUtil.getResult("9999", "기취소오류", "이미 취소된 거래입니다.");
+				return;
+			}
+		}
+		
+		SharedMap<String,Object> refundedMap = trxDAO.getTrxRefundSumByTrxId(trxMap.getString("trxId"));
+		long refundedAmount = refundedMap.getLong("AMT");
+		logger.info("========== valid() - REFUNDED_AMT: {}",refundedAmount);
+
+		if (trxMap.getLong("amount") == -refundedAmount) {
+			response.result = ResultUtil.getResult("9999", "기취소오류", "이미 취소된 거래입니다.");
+			return;
+		}
+		if (-refundedAmount + request.refund.amount > trxMap.getLong("amount")) {
+			response.result = ResultUtil.getResult("9999", "취소오류", "취소요청금액이 원거래금액보다 큽니다.");
+			return;
+		}
+		if (trxMap.getString("status").equals("승인취소")) {
+			response.result = ResultUtil.getResult("9999", "기취소오류", "이미 취소된 거래입니다.");
+			return;
+		}
+		
+		if (request.refund.amount == trxMap.getLong("amount")) {
+			sharedMap.put("rfdAll", "전액");
+		} else {
+			sharedMap.put("rfdAll", "부분");
+			if (refundedAmount == 0) { // 이미 취소된 금액이 없으면 1
+				sharedMap.put("rfdAllCnt", 1);
+			} else {
+				sharedMap.put("rfdAllCnt", refundedMap.getInt("CNT") + 1);
+			}
+			logger.info("========== valid() - RFD_SEQ   : {}", sharedMap.getString("rfdAllCnt"));
+		}
+		
+		//네추럴리플러스 모바일 APP 에서의 취소는 금지한다. 2019-05-07 trackId 가 AXR 로 시작되면 이건 안되도록 한다.
+		/*
+		if (mchtTmnMap.getString("mchtId").equals("naturallyplus") && request.refund.trackId.startsWith("AXR_")) {
+			response.result = ResultUtil.getResult("9999", "취소거절","네추럴리플러스 가맹점 요청에 의하여 APP에서 취소를 사용할 수 없습니다. 본사에 문의하시기 바랍니다.");
+			return;
+		}
+		*/
+		
+		
+		//당일 거래가 아닌 경우  미정산 금액보다 큰 경우 취소 금지, 단 강제취소 설정된 것은 제외한다.2019.03.11
+		
+logger.info("========== valid() - today :  " + CommonUtil.getCurrentDate("yyyyMMdd"));
+logger.info("========== valid() - trxMap 원거래 regDay :  " + trxMap.getString("regDay"));
+logger.info("========== valid() - 취소권한 refundRule :  " + mchtMngMap.getString("refundRule"));
+		SharedMap<String, Object> mchtInfo = trxDAO.getMchtInstall(mchtMngMap.getString("mchtId"));
+		
+		if (!trxMap.getString("regDay").equals(CommonUtil.getCurrentDate("yyyyMMdd"))) {
+			String forceType = trxDAO.getForceRefund(trxMap.getString("trxId"));
+			if (CommonUtil.isNullOrSpace(forceType)) {
+				logger.info("");
+				logger.info("========== valid() - 취소권한 기존 체크" );
+				if (mchtMngMap.isEquals("refundRule", "MID")) {
+					long notSettleSum = trxDAO.notSettleSum(mchtMngMap.getString("mchtId"));
+					logger.info("========== valid() - MID 미정산금액  : {}",notSettleSum);
+					if (notSettleSum < request.refund.amount) {
+						trxDAO.insertRefundIQR(trxMap.getString("trxId"),"가맹점 취소금액이 미정산 금액보다 적습니다. 미정산금액:"+notSettleSum+" ,취소요청:"+request.refund.amount);
+						response.result = ResultUtil.getResult("9999", "취소실패","가맹점 취소금액이 미정산 금액보다 적습니다."); return;
+					}
+				} else if(mchtMngMap.isEquals("refundRule", "TID")) {
+					
+					SharedMap<String,Object> rootTrxMap = trxDAO.getTrxCapDtlByTrxId(trxMap.getString("trxId"));
+					if (rootTrxMap.isEquals("stlStatus", "정산대기") && !rootTrxMap.isEquals("stlDay", CommonUtil.getCurrentDate("yyyyMMdd"))) {
+						logger.info("========== valid() - TID 취소 가능거래 정산상태 :{},정산예정일:{}",rootTrxMap.getString("stlStatus"),rootTrxMap.getString("stlDay"));
+					} else if(rootTrxMap.isEquals("stlStatus", "정산대기") && rootTrxMap.isEquals("stlDay", CommonUtil.getCurrentDate("yyyyMMdd"))) {
+						if (CommonUtil.parseInt(CommonUtil.getCurrentDate("HH")) < 10){
+							logger.info("========== valid() - TID 취소 가능거래 9시 이전거래 정산상태 :{},정산예정일:{}",rootTrxMap.getString("stlStatus"),rootTrxMap.getString("stlDay"));
+						} else {
+							response.result = ResultUtil.getResult("9999", "취소실패","당일 정산건으로 취소가 불가합니다.관리자에게 문의하여 주시기 바랍니다."); 
+							return;
+						}
+					} else {
+						response.result = ResultUtil.getResult("9999", "취소실패","당일 정산건으로 취소가 불가합니다.관리자에게 문의하여 주시기 바랍니다."); 
+						return;
+					}
+					
+					/** 2019.06.03 백업
+					long notSettleSum = trxDAO.notSettleSumTmnId(mchtTmnMap.getString("tmnId"));
+					logger.info("TID 미정산금액  : {}",notSettleSum);
+					if(notSettleSum < request.refund.amount) {
+						trxDAO.insertRefundIQR(trxMap.getString("trxId"),"단말기 취소금액이 미정산 금액보다 적습니다. 미정산금액:"+notSettleSum+" ,취소요청:"+request.refund.amount);
+						response.result = ResultUtil.getResult("9999", "취소실패","단말기 취소금액이 미정산 금액보다 적습니다.");return;
+					}else {
+						//09시 이후이고 당일 정산건에 대해서는 취소할 수 없다. 2019.04.23
+						if(CommonUtil.parseInt(CommonUtil.getCurrentDate("HH")) > 9){
+							if(trxDAO.getTrxCapDtlByTrxId(trxMap.getString("trxId")).equals(CommonUtil.getCurrentDate("yyyyMMdd"))){
+								trxDAO.insertRefundIQR(trxMap.getString("trxId"),"미정산금액은 있으나 당일 정산건으로 09시 이후는 취소가 불가합니다.");
+								response.result = ResultUtil.getResult("9999", "취소실패","당일 정산건으로 취소가 불가합니다.관리자에게 문의하여 주시기 바랍니다.");return;
+							}
+						}
+						
+					}
+					*/
+					
+					// 해당 가맹점은 당일거래가 아니면 취소 불가. 2019.06.20
+				} else if (mchtMngMap.isEquals("refundRule", "MID2")) {
+					SharedMap<String,Object> rootTrxMap = trxDAO.getTrxCapDtlByTrxId(trxMap.getString("trxId"));
+					if ((rootTrxMap.isEquals("stlStatus", "정산완료")) || Long.parseLong(CommonUtil.getCurrentDate("yyyyMMdd")) >= rootTrxMap.getLong("stlDay") ) {
+						response.result = ResultUtil.getResult("9999", "취소실패", "당일 정산건으로 취소가 불가합니다.관리자에게 문의하여 주시기 바랍니다.");
+						return;
+					}
+				}
+			} else {
+				logger.info("========== valid() - 강제취소 : {}",forceType);
+			}
+		}
+		
+		// 2022-05-17 즉시취소
+		String rootTrxId = "";
+		for (String key : trxIdPayMap.keySet()) {
+			if (trxMap.getString("trxId").contains(key) == true) {
+				rootTrxId = key;
+			}
+		}
+		
+		// 2021-11-19 취소권한 추가		
+		// 취소권한 : 없음
+		logger.info("========== valid() - 취소권한 체크 : " + mchtInfo.getString("refundRule"));
+		if (!request.refund.metadata.isEquals("grade", "본사")) {
+			if (mchtInfo.isEquals("refundRule", "NLID")) {
+				logger.info("========== valid() - 취소권한 : 없음 : " + mchtInfo.getString("refundRule") + CommonUtil.getCurrentDate("yyyyMMdd") );
+				response.result = ResultUtil.getResult("9999", "취소실패", "취소권한이 없어 취소가 불가합니다. 관리자에게 문의하여 주시기 바랍니다.");
+				return;
+			// 취소권한 당일취소	
+			} else if (mchtInfo.isEquals("refundRule", "TLID")) {
+				SharedMap<String,Object> rootTrxMap = new SharedMap<String,Object>();
+				if ("".equals(rootTrxId)) {
+					rootTrxMap = trxDAO.getTrxCapDtlByTrxId(trxMap.getString("trxId"));
+					logger.info("========== valid() - 취소권한 : 당일취소 : " + mchtInfo.getString("refundRule") + "" +  CommonUtil.getCurrentDate("yyyyMMdd") );
+					logger.info("========== valid() - rootTrxMap trxDay : " + rootTrxMap.getString("trxDay") );
+					if (!rootTrxMap.isEquals("trxDay", CommonUtil.getCurrentDate("yyyyMMdd"))) {
+						System.out.println();
+						System.out.println("rootTrxMap trxDay : " + rootTrxMap.get("trxDay"));
+						System.out.println("VS yyyyMMdd : " + CommonUtil.getCurrentDate("yyyyMMdd"));
+						System.out.println();
+						response.result = ResultUtil.getResult("9999", "취소실패", "금일 거래건이 아니므로 취소가 불가합니다. 관리자에게 문의하여 주시기 바랍니다.");
+						return;
+					}
+				}
+			// 취소권한 PG정산일전
+			} else if (mchtInfo.isEquals("refundRule", "PLID")) {
+				SharedMap<String,Object> rootTrxMap = new SharedMap<String,Object>();
+				if ("".equals(rootTrxId)) {
+					rootTrxMap = trxDAO.getTrxCapDtlByTrxId(trxMap.getString("trxId"));
+					logger.info("========== valid() - 취소권한 : PG정산일전 : " + mchtInfo.getString("refundRule") + CommonUtil.getCurrentDate("yyyyMMdd") );
+					logger.info("========== valid() - rootTrxMap stlVanDay : " + rootTrxMap.getString("stlVanDay") );
+					if (Long.parseLong(CommonUtil.getCurrentDate("yyyyMMdd")) >= rootTrxMap.getLong("stlVanDay") ) {
+						response.result = ResultUtil.getResult("9999", "취소실패", "PG정산일전이 아니므로 취소가 불가합니다. 관리자에게 문의하여 주시기 바랍니다.");
+						return;
+					}
+				}
+				// 취소권한 : 가맹점정산일전
+			} else if (mchtInfo.isEquals("refundRule", "MLID")) { 
+				SharedMap<String,Object> rootTrxMap = new SharedMap<String,Object>();
+				if ("".equals(rootTrxId)) {
+					rootTrxMap = trxDAO.getTrxCapDtlByTrxId(trxMap.getString("trxId"));
+					logger.info("========== valid() - 취소권한 : 가맹점정산일전 : " + mchtInfo.getString("refundRule") + CommonUtil.getCurrentDate("yyyyMMdd") );
+					logger.info("========== valid() - rootTrxMap stlDay : " + rootTrxMap.getString("stlDay") );
+					if (Long.parseLong(CommonUtil.getCurrentDate("yyyyMMdd")) >= rootTrxMap.getLong("stlDay")) { 
+						response.result = ResultUtil.getResult("9999", "취소실패", "PG정산일전이 아니므로 취소가 불가합니다. 관리자에게 문의하여 주시기 바랍니다.");
+						return;
+					}
+				}
+			// 취소권한 : 모두취소
+			} else if (mchtInfo.isEquals("refundRule", "ALID")) {
+				logger.info("========== valid() - 취소권한 : 모두취소 : " + mchtInfo.getString("refundRule") + CommonUtil.getCurrentDate("yyyyMMdd") );
+			}
+		} else {
+			logger.info("========== valid() - 취소처리 grade : " + request.refund.metadata.getString("grade") + CommonUtil.getCurrentDate("yyyyMMdd") );
+		}
+		
+		logger.info("========== valid() - RFD_ALL   : {}",sharedMap.getString("rfdAll"));
+		logger.info("========== valid() - RFD_TYPE  : {}",sharedMap.getString("rfdType"));
+
+		
+		/* 20191106 yhbae 추가 */
+		SharedMap<String, Object> trxResMap = trxDAO.getTrxRes(trxMap.getString("trxId"));
+		if (trxResMap != null && trxResMap.getString("pairingRouteVan") != null && !trxResMap.getString("pairingRouteVan").isEmpty()) {
+			SharedMap<String, Object> acsResMap = trxDAO.getAcsResByTrxId(trxMap.getString("trxId"));
+			sharedMap.put("acsType", acsResMap.getString("acsType"));
+			sharedMap.put("noInt", acsResMap.getString("noInt"));
+
+			sharedMap.put("3ddirect", "true");
+			sharedMap.put("pairingVtid", trxResMap.getString("pairingVtid"));
+			sharedMap.put("pairingRouteVan", trxResMap.getString("pairingRouteVan"));
+			sharedMap.put("pairingCid", trxResMap.getString("pairingCid"));
+			String mchtBRN = trxDAO.getAESDec(mchtMap.getString("identity"));
+			sharedMap.put("mchtBRN", mchtBRN);
+			sharedMap.put("shopDomain", mchtMngMap.getString("shopDomain"));
+			sharedMap.put("mchtIp", "");
+			sharedMap.put("vanTrxId", trxResMap.getString("vanTrxId"));
+		}
+/*
+		if (mchtTmnMap.startsWith("van", "SMARTRO")) {
+			if (mchtTmnMap.startsWith("semiAuth", "A")) {
+				logger.info("========== SMARTRO 인증결제 - vanTrxId : " + trxMap.getString("vanTrxId"));
+				sharedMap.put("vanTrxId", trxMap.getString("vanTrxId"));
+			}
+		}
+*/		
+		
+		logger.info("========== ========== ========== ========== ========== exec() - END");
+	}
+
+	
+	
+	public static void main(String[] args){
+		System.out.println();
+	}
+
+	@Override
+	public void valid2(Request request, SharedMap<String, Object> sharedMap, SharedMap<String, Object> sales_mchtMap,
+			SharedMap<String, Object> sales_mchtTmnMap, SharedMap<String, Object> sales_mchtMngMap) {
+		// TODO Auto-generated method stub
+		
+	}
+	
+
+}

@@ -1,0 +1,34 @@
+{
+  "db": {
+    "dbType": "MYSQL",
+    "poolName": "HKH_PAY",
+    "driver": "org.mariadb.jdbc.Driver",
+    "jdbcUrl": "jdbc:mariadb://175.207.29.23:3306/CP_C3",
+    //"jdbcUrl": "jdbc:mariadb://220.86.113.220:3306/CP_C3_DEV",
+    "userName": "c3",
+    "passWord": "hkh_1qa2ws",
+    "maxConnection": 20,
+    "minConnection": 10,
+    "partitionCount": 1
+  },
+  "vertx": {
+    "host": "0.0.0.0",
+    "port": 8091,
+    "idleTimeout": 120000,
+    "receiveBufferSize": 4096000,
+    "routeClass": "com.pgmate.pay.main.Listener",
+    "tcpKeepAlive": false,
+    "soLinger": 0,
+    "module": "HKH_PAY",
+    "webroot": "../war",
+    "disableCaching":true,
+    "ssl": {
+      "ssl": false,
+      "protocol": "",
+      "securityProperteis":"",
+      "cipherSuite": [""],
+      "keyStore": "",
+      "keyStorePassword": ""
+    }
+  }
+}

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Document</title>
+</head>
+<body>
+  <form action="http://cp.cyrexpay.com/api/bill/widget" method="POST">
+    <input type="text" name="payKey" value="pk_bbcd-e2d894-955-2a5af">
+    <input type="text" name="trackId" value="T12300000">
+		<input type="text" name="payerName" value="홍길동이">
+		<input type="text" name="payerEmail" value="yhbae@naver.com">
+		<input type="text" name="payerTel" value="010-1111-2222">
+		<input type="text" name="payerId" value="yhbae">
+		<input type="text" name="udf1" value="UDF-1">
+		<input type="text" name="udf2" value="THE Uuser Defind F??">
+		<input type="text" name="summary" value="Summary~~~~~">
+    <input type="text" name="redirectUrl" value="http://cp.cyrexpay.com:3000/webhook">
+    
+    <input type="submit" value="시작">
+  </form>
+</body>
+</html>
