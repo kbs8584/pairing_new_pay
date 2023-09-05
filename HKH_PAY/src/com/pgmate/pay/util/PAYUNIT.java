@@ -9,7 +9,7 @@ import com.pgmate.lib.util.map.SharedCacheMap;
 public class PAYUNIT {
 
 	
-	public static final String PAY_HOST_LIVE 		= "api.pairingpayments.nett";
+	public static final String PAY_HOST_LIVE 		= "api.pairingpayments.net";
 	
 	public static final String PAY_DATE 			= "yyyyMMddHHmmss";
 	
