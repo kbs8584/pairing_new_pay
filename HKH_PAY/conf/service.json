@@ -7,11 +7,12 @@
 //	"jdbcUrl": "jdbc:mariadb://220.86.113.220:3306/CP_C3",
 
     //    "jdbcUrl": "jdbc:mariadb://222.237.78.137:3306/CP_C3",
-    "jdbcUrl": "jdbc:mariadb://133.186.251.238:3306/CP_C3",
+//    "jdbcUrl": "jdbc:mariadb://133.186.251.238:3306/CP_C3",
+    "jdbcUrl": "jdbc:mariadb://223.130.142.219:3306/CP_C3",
 
-    //    "userName": "c3",
+        "userName": "c3",
     //    "passWord": "hkh_1qa2ws",
-    "userName": "root",
+//    "userName": "root",
     "passWord": "byung1524!",
     "maxConnection": 20,
     "minConnection": 10,
